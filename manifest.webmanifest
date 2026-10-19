@@ -1,0 +1,48 @@
+{
+ "name": "AGR Drivers",
+ "short_name": "AGR Drivers",
+ "start_url": "/agr-drivers/",
+ "scope": "/agr-drivers/",
+ "display": "standalone",
+ "background_color": "#0b1020",
+ "theme_color": "#003688",
+ "icons": [
+  {
+   "src": "icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png",
+   "purpose": "any"
+  },
+  {
+   "src": "icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "any"
+  },
+  {
+   "src": "icon-maskable-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "maskable"
+  }
+ ],
+ "share_target": {
+  "action": "/agr-drivers/share",
+  "method": "POST",
+  "enctype": "multipart/form-data",
+  "params": {
+   "title": "title",
+   "text": "text",
+   "files": [
+    {
+     "name": "pdfs",
+     "accept": [
+      "application/pdf",
+      ".pdf"
+     ]
+    }
+   ]
+  }
+ },
+ "id": "/agr-drivers/"
+}
