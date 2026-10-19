@@ -144,7 +144,7 @@ export async function reparseIfOld(){const v=(await idb.get('kv','parserVersion'
 export async function oldFiles(today){const notices=(await idb.get('kv','notices'))||{},cards=(await idb.get('kv','cards'))||{},compact=(await idb.get('kv','compact'))||{},books=(await idb.get('kv','normal'))||[],pdfs=new Set(await idb.keys('pdfs')),out=[];
  const keys=new Set([...Object.keys(notices),...Object.keys(cards),...Object.keys(compact)]);
  for(const k of [...keys].sort()){const ds=((notices[k]||{}).dates||[]).filter(Boolean).sort();if(!ds.length)continue;const end=ds[ds.length-1];if(end>=today)continue;const id=k.replace('/','');
-  const files=[];if(notices[k])files.push({kind:'csv',label:`Notice ${k} (from CSV)`});if(pdfs.has('C-'+id+'.pdf'))files.push({kind:'pdf',id:'C-'+id+'.pdf',label:`Notice ${k} PDF`});if(pdfs.has('RC-'+id+'.pdf'))files.push({kind:'pdf',id:'RC-'+id+'.pdf',label:`Running cards ${k} PDF`});
+  const files=[];if(notices[k]&&notices[k].src!=='pdf')files.push({kind:'csv',label:`Notice ${k} (from CSV)`});if(pdfs.has('C-'+id+'.pdf'))files.push({kind:'pdf',id:'C-'+id+'.pdf',label:`Notice ${k} PDF`});if(pdfs.has('RC-'+id+'.pdf'))files.push({kind:'pdf',id:'RC-'+id+'.pdf',label:`Running cards ${k} PDF`});
   out.push({type:'notice',key:k,dates:ds,end,files})}
  for(const b of books){const newer=books.find(o=>o!==b&&o.from&&b.from&&o.from>b.from&&o.from<=today);if((b.until&&b.until<today)||newer)out.push({type:'book',key:b.pdf,timetable:b.timetable,from:b.from,until:b.until,why:newer?`replaced by book ${newer.timetable}`:'ended',files:[{kind:'pdf',id:b.pdf,label:`Duty book ${b.timetable}`}]})}
  return out}
