@@ -22,6 +22,12 @@ const covers=()=>LS.get('covering',{});
 function cardRows(card){const out=[];(card.pickups||[]).forEach((p,pi)=>{const pts=p.pts&&p.pts.length?p.pts:[{t:p.time,at:p.at,dir:p.dir}];pts.forEach((q,k)=>out.push({pi,k,train:p.train,t:q.t,at:q.at,dir:k===0?(q.dir||p.dir):(q.dir||''),p}))});return out}
 // migrate old {duty,from} to brackets {duty,s:{pi,k},e:null}
 function covNorm(cv){if(!cv)return cv;if(!cv.s)return{duty:cv.duty,s:{pi:cv.from||0,k:0},e:null};return cv}
+const DEPOTS={AGR:{name:'Arnos Grove',id:'940GZZLUASG'},CFS:{name:'Cockfosters',id:'940GZZLUCKS'}};
+// My depot: the Settings choice, else the loaded duty book's header (e.g. 'Cockfosters Duty Book 132'), else Arnos Grove
+function depot(){if(DEPOTS[S.myDepot])return S.myDepot;const b=(DATA.normal||[]).find(x=>DEPOTS[x.depot]);return b?b.depot:'AGR'}
+// a day's depot: the running card / notice sign-on place when it is a depot, else My depot
+function depOf(r){const c=String(r&&(r.onAt||'')).split(' ')[0];return DEPOTS[c]?c:depot()}
+const depName=c=>DEPOTS[c||depot()].name;
 const allowMin=()=>+S.allow||0;
 // spare turn's own finish (notice/book), or one the user typed; never guessed
 function spareOff(date,b){const s=b&&b.times&&b.times.sign_off||'';if(/^\d\d:\d\d/.test(s))return s.slice(0,5);return LS.get('spareOff',{})[date]||''}
@@ -39,7 +45,7 @@ function resolve(date){const b=resolveFor(date,duties()[date]);const cv=covNorm(
  const ed=ptDir(ei),endInfo={t:E0.t,at:E0.at,code:E0.at.split(' ')[0],train:E0.train,dir:ed.dir,rev:ed.rev,toEnd,last:ei===rows.length-1};
  const st=sl[0],rel=t=>(t2m(t)-t2m(S0.t)+1440)%1440,endRel=rel(E0.t);
  const start=S0.k>0?{train:S0.train,time:S0.t,at:S0.at,dir:tk.dir,rev:tk.rev,kind:'Platform'}:{train:S0.train,time:S0.t,at:S0.at,dir:ps[S0.pi].dir,rev:ps[S0.pi].rev,kind:ps[S0.pi].kind};
- return{...c,duty:b.duty,cover:false,spare:false,onAt:'AGR',times:b.times&&b.times.sign_on?{sign_on:b.times.sign_on,length:'',sign_off:spareOff(date,b)}:null,
+ return{...c,duty:b.duty,cover:false,spare:false,onAt:b.onAt||depot(),times:b.times&&b.times.sign_on?{sign_on:b.times.sign_on,length:'',sign_off:spareOff(date,b)}:null,
   covering:{spareOff:spareOff(date,b),spareOffTyped:!(b.times&&/^\d\d:\d\d/.test(b.times.sign_off||''))&&!!spareOff(date,b),spareDuty:b.duty,spareOn:b.times&&b.times.sign_on||'',spareAt:b.onAt||'',duty:cv.duty,start,end:endInfo,whole:si===0&&toEnd,ctype:c.type,si,ei},
   card:{...c.card,pickups:sl,allPickups:ps,bracket:{si,ei},meals:(c.card.meals||[]).filter(m=>rel(m.from)<endRel&&rel(m.from)<720),allMeals:c.card.meals||[]}}}
 function resolveFor(date,duty){if(!duty)return null;if(!/^\d{3}$/.test(duty))return{date,duty,type:SPECIAL[duty]||'Other',special:true,notice:'',times:null,card:null};
@@ -47,7 +53,7 @@ function resolveFor(date,duty){if(!duty)return null;if(!/^\d{3}$/.test(duty))ret
    const card=(DATA.cards[n.notice]||{})[duty]||null,cp=(DATA.compact[n.notice]||{})[duty]||null;
    // spare turn: CSV tmi flag, compact line says 'to manager's instructions', or the RC book for this notice is on the phone but has no card for a duty the notice lists
    const tmi=!!((d&&d.tmi==='1')||(cp&&cp.tmi)||(!card&&d&&d.section!=='cover'&&DATA.cards[n.notice]&&Object.keys(DATA.cards[n.notice]).length));
-   if(d||cp||n.kind==='FULL')return{date,duty,type:'Engineering',notice:n.notice,times:d&&d.sign_on?d:(cp&&cp.on?{sign_on:cp.on,sign_off:'',length:''}:null),cover:!!(d&&d.section==='cover'),spare:!!(d&&d.section==='spare')||tmi,tmi,card,compact:cp,get onAt(){return(this.card&&this.card.onAt)||(this.compact&&this.compact.onAt)||''}}}}
+   if(d||cp||n.kind==='FULL')return{date,duty,type:'Engineering',notice:n.notice,times:d&&d.sign_on?d:(cp&&cp.on?{sign_on:cp.on,sign_off:'',length:''}:null),cover:!!(d&&d.section==='cover'),spare:!!(d&&d.section==='spare')||(tmi&&!(card&&card.pickups&&card.pickups.length)),tmi,tmiAfter:!!(tmi&&card&&card.pickups&&card.pickups.length&&d&&d.section!=='spare'),card,compact:cp,get onAt(){return(this.card&&this.card.onAt)||(this.compact&&this.compact.onAt)||''}}}}
  const wd=new Date(date+'T12:00:00').getDay();let best=null,book=null;
  for(const b of DATA.normal||[]){const inRange=!b.from||(date>=b.from&&date<=b.until);for(const d of b.duties)if(d.duty===duty&&d.days.includes(wd)){const sc=(inRange?0:100)+d.days.length*2+(d.cover?1:0);if(!best||sc<best.sc){best={...d,sc,inRange};book=b}}}
  if(best)return{date,duty,type:'Normal',onAt:best.onAt||best.from||'',warn:best.inRange?'':'Outside the duty book dates!',notice:`Duty book ${book.timetable} · ${best.dt}`,times:{sign_on:best.on,length:best.length,sign_off:best.finish+(best.finishAt&&best.finishAt!=='*'?' '+best.finishAt:best.finishAt==='*'?' *':'')},cover:!!best.cover,spare:!!best.spare,note:best.note||'',desc:best.desc||'',card:{pdf:book.pdf,pages:best.pages,pickups:best.pickups,meals:best.meals||[],hl:best.hl}};
@@ -134,9 +140,9 @@ function cardHead(){const d=$('#cardDay').value,t=todayISO(),dd=new Date(d+'T12:
 function cardView(){if(!$('#cardDay').value)$('#cardDay').value=todayISO();{const ch=LS.get('changes',{}),cd=$('#cardDay').value;if(ch[cd]&&!ch[cd].seen&&document.querySelector('nav button.on')?.dataset.t==='card'){ch[cd].seen=true;LS.set('changes',ch)}}cardHead();if(brk&&brk.date===$('#cardDay').value){brkView();return}if(brk&&brk.date!==$('#cardDay').value)brk=null;const r=resolve($('#cardDay').value);if(!r||r.special){$('#cardInfo').innerHTML=r?`<p class="restday">${r.type}</p><p class="muted">No running card.</p>`:'<p>No duty entered for this day.</p>';$('#cardPages').innerHTML='';return}
  let h=r.covering?covBanner(r):'';h+=r.covering&&!r.covering.missing?'':`<p><span class="tag ${r.type==='Engineering'?'eng':''}">${r.type}</span> Duty <b>${esc(r.duty)}</b>${r.warn?' <span class="err">'+r.warn+'</span>':''}</p>`;
  if(r.times&&!r.covering)h+=`<p>On <b>${r.times.sign_on}</b> ${esc(r.onAt||'')} · Length ${r.times.length} · Off <b>${r.times.sign_off}</b>${r.times.clock_change==='1'?' <span class="tag eng">clock change</span>':''}</p>`;
- if(r.cover)h+=`<p><span class="tag eng">Cover duty</span> No running card${r.desc?' — '+esc(r.desc):''}. The cover table is shown below with this duty highlighted.</p>`;else if(r.spare)h+=r.tmi?`<p class="big">Spare turn, to duty manager's instructions. Tap Covering when you know your duty.</p><p><button class="b s" id="cardCov">Covering…</button></p>`:'<p><span class="tag">Spare</span> No booked train.</p>';if(r.note)h+=`<p class="muted">* ${esc(r.note)}</p>`;
+ if(r.cover)h+=`<p><span class="tag eng">Cover duty</span> No running card${r.desc?' — '+esc(r.desc):''}. The cover table is shown below with this duty highlighted.</p>`;else if(r.spare)h+=r.tmi?`<p class="big">Spare turn, to duty manager's instructions. Tap Covering when you know your duty.</p><p><button class="b s" id="cardCov">Covering…</button></p>`:'<p><span class="tag">Spare</span> No booked train.</p>';if(r.tmiAfter&&!r.covering)h+=`<p><span class="tag">Then spare</span> Trains below, then to duty manager's instructions after the last one until you finish${r.times&&r.times.sign_off?' at <b>'+esc(r.times.sign_off)+'</b>':''}.</p>`;if(r.note)h+=`<p class="muted">* ${esc(r.note)}</p>`;
  if(r.card&&r.card.pickups.length)h+=pickTable(r.card,r.covering);
- if(r.type==='Normal'&&!r.card)h+=(DATA.normal&&DATA.normal.length)?'<p class="err">Duty '+esc(r.duty)+' is not in the normal duty book for this weekday.</p>':'<p class="err">This is a normal-timetable day. Import the normal duty book PDF (e.g. "Arnos Grove Duty Book 132…pdf") in Settings to see its running card.</p>';
+ if(r.type==='Normal'&&!r.card)h+=(DATA.normal&&DATA.normal.length)?'<p class="err">Duty '+esc(r.duty)+' is not in the normal duty book for this weekday.</p>':'<p class="err">This is a normal-timetable day. Import the normal duty book PDF (e.g. "'+depName()+' Duty Book 132…pdf") in Settings to see its running card.</p>';
  else if(!r.card)h+=r.compact?'<p class="muted">No RC page for this duty. Showing the compact notice page (row highlighted).</p>':'<p class="muted">No running card page imported for this duty.</p>';
  $('#cardInfo').innerHTML=h;fillBack($('#cardInfo'));bindSpOff($('#cardInfo'),cardView);{const cb=$('#cardCov');if(cb)cb.onclick=()=>{const d=$('#cardDay').value;$('#wk').value=sat(d);document.querySelector('nav button[data-t=week]').click();setTimeout(()=>covEditor(d),50)}}const el=$('#cardPages');el.innerHTML='';const w=el.clientWidth||Math.min(innerWidth,800)-24;
  const fail=e=>{el.innerHTML='<p class="err">Could not draw the card: '+esc(e&&e.message||e)+'</p>'};
@@ -161,7 +167,7 @@ let trSel=null;
 async function myTrains(){clearTimeout(trTimer);const out=$('#myTrains');if(!document.querySelector('#trains.on'))return;
  const nowD=NOW(),now=+nowD,date=`${nowD.getFullYear()}-${String(nowD.getMonth()+1).padStart(2,'0')}-${String(nowD.getDate()).padStart(2,'0')}`,r=resolve(date);
  const head=`<p class="muted">Today ${DAYS[nowD.getDay()]} ${date.slice(8)}/${date.slice(5,7)}${r?' · '+(r.special?r.type:'duty '+esc(r.duty)+(r.covering&&!r.covering.missing?' covering '+esc(r.covering.duty):'')):''}</p>`;
- if(r&&(r.cover||r.spare)){out.innerHTML=head+`<p class="big">${r.cover?'Cover':'Spare'} duty ${esc(r.duty)}</p><p>No booked pick-up. Sign on ${r.times?r.times.sign_on:'—'} at AGR.</p>`;return}
+ if(r&&(r.cover||r.spare)){out.innerHTML=head+`<p class="big">${r.cover?'Cover':'Spare'} duty ${esc(r.duty)}</p><p>No booked pick-up. Sign on ${r.times?r.times.sign_on:'—'} at ${depOf(r)}.</p>`;return}
  if(r&&r.special){out.innerHTML=head+`<p class="restday">${r.type}</p><p class="muted">No train to track today.</p>`;return}
  if(!r){out.innerHTML=head+'<p class="big">No duty set for today</p><p class="muted">Enter today\'s duty on the Week tab.</p>';return}
  if(!r.card||!r.card.pickups.length){out.innerHTML=head+'<p class="big">No pick-ups known</p><p class="muted">This duty\'s running card is not on this device. Import it in Settings.</p>';return}
@@ -175,7 +181,7 @@ async function myTrains(){clearTimeout(trTimer);const out=$('#myTrains');if(!doc
  const p=ps[cur],booked=at(p.time),working=now>=+booked,RL=reliefOf(r,ps,cur),rel='';
  const dirTxt=p.rev?'Reverser':`${p.dir}`;
  let h=head+`<div class="trainhead"><div><div class="muted">Train</div><div class="trainno" id="curTrain">${esc(p.train)}</div></div><div><div>Pick up <b class="big">${p.time}</b></div><div>at <b>${esc(p.at)}</b> · ${dirTxt} · ${p.kind}${rel}</div>${RL?`<div class="relief">${RL.getOff?'Get off':'Relieved'} at <b>${relTxt(RL)}</b></div>`:''}${working?'<div class="tag eng">Working this train now</div>':''}</div></div>`;h=h.replace('<div class="trainhead">',mealBanner(r.card,ps,at,now,cur,working,end,RL)+'<div class="trainhead">');
- let all=null;try{all=await (await fetch('https://api.tfl.gov.uk/Line/piccadilly/Arrivals')).json()}catch(e){h+='<p class="err">No live data (offline?).</p>'}
+ let all=null;try{all=await (await fetch('https://api.tfl.gov.uk/Line/piccadilly/Arrivals')).json();if(!Array.isArray(all))throw 0}catch(e){all=null;h+='<p class="err">No live data (offline?).</p>'}
  if(all){const preds=all.filter(a=>normV(a.vehicleId)===normV(p.train)).sort((a,b)=>a.timeToStation-b.timeToStation),T=`<span class="tno">${esc(p.train)}</span>`;
   if(!preds.length)h+=`<p>${T}${booked-now>3600e3?'Not running yet / too far ahead.':p.kind!=='Platform'&&!working?'Not in TfL arrivals yet (starts from the depot road).':'Not found in TfL arrivals right now.'} Checking again every 30 s.</p>`;
   else{h+=`<p>${T}Now: <b>${esc(preds[0].currentLocation||'—')}</b> → ${esc(preds[0].towards||preds[0].destinationName||'')}</p>`+preds.filter((a,i,l)=>l.findIndex(b=>b.naptanId===a.naptanId)===i).slice(0,4).map(a=>`<p class="muted">${T}${esc(a.stationName.replace(' Underground Station',''))} ${new Date(a.expectedArrival).toTimeString().slice(0,5)} · ${esc(a.platformName||'')}</p>`).join('');
@@ -191,18 +197,18 @@ async function lineStatus(){return lsCheck();try{const j=await (await fetch('htt
 let ftTimer=null;
 async function findTrain(){clearTimeout(ftTimer);const num=normV(($('#ftNum').value||'').replace(/\D/g,'')),out=$('#ftOut');if(!num){out.innerHTML='';return}
  out.innerHTML='<p class="muted">Looking up '+esc(num)+'…</p>';let all;
- try{all=await (await fetch('https://api.tfl.gov.uk/Line/piccadilly/Arrivals')).json()}catch(e){out.innerHTML='<p class="err">No live data (offline?).</p>';ftTimer=setTimeout(findTrain,30000);return}
+ try{all=await (await fetch('https://api.tfl.gov.uk/Line/piccadilly/Arrivals')).json();if(!Array.isArray(all))throw 0}catch(e){out.innerHTML='<p class="err">No live data (offline?).</p>';ftTimer=setTimeout(findTrain,30000);return}
  const T=`<span class="tno">${esc(num)}</span>`,preds=all.filter(a=>normV(a.vehicleId)===num).sort((a,b)=>a.timeToStation-b.timeToStation);
  // on today's duty?
  const r=resolve(todayISO()),mine=r&&r.card?r.card.pickups.filter(p=>normV(p.train)===num):[];
  const duty=mine.length?`<p class="tag eng">On today's duty ${esc(r.duty)}</p>`+mine.map(p=>`<p>${T}Pick up <b>${p.time}</b> at ${esc(p.at)} · ${p.rev?'Reverser':p.dir}${p.relief?' · relieved '+p.relief:''}</p>`).join(''):'<p class="muted">Not on today\'s duty card.</p>';
  if(!preds.length){out.innerHTML=`<div class="trainhead"><div class="trainno">${esc(num)}</div></div><p>Train ${esc(num)} is not in TfL's live Piccadilly predictions right now. It may not be in service (e.g. in a depot or siding), or not yet within the prediction window (TfL only predicts the next stops of trains already running).</p>${duty}<p class="muted">Checking again every 30 s. <a href="#" id="ftRetry">Retry now</a></p>`;$('#ftRetry').onclick=e=>{e.preventDefault();findTrain()};ftTimer=setTimeout(findTrain,30000);return}
  const f=preds[0],uniq=preds.filter((a,i,l)=>l.findIndex(b=>b.naptanId===a.naptanId&&b.platformName===a.platformName)===i),hm=x=>new Date(x).toTimeString().slice(0,5);
- const agr=uniq.filter(a=>a.naptanId==='940GZZLUASG'),upd=preds.map(a=>a.timestamp).sort().pop();
+ const DP=depot(),agr=uniq.filter(a=>a.naptanId===DEPOTS[DP].id),upd=preds.map(a=>a.timestamp).sort().pop();
  out.innerHTML=`<div class="trainhead"><div class="trainno">${esc(num)}</div><div><div>${T}Now: <b>${esc(f.currentLocation||'—')}</b></div><div>${esc(f.platformName||'')} · towards <b>${esc(f.towards||f.destinationName||'—')}</b>${f.destinationName&&f.towards!==f.destinationName?' (destination '+esc(f.destinationName.replace(' Underground Station',''))+')':''}</div></div></div>
  <p>${T}Next station: <b>${esc(f.stationName.replace(' Underground Station',''))}</b> in ${Math.max(0,Math.round(f.timeToStation/60))} min (${hm(f.expectedArrival)})</p>
  ${uniq.slice(0,8).map(a=>`<p class="muted">${T}${esc(a.stationName.replace(' Underground Station',''))} ${hm(a.expectedArrival)} · ${esc(a.platformName||'')}</p>`).join('')}
- <p>${T}Arnos Grove: ${agr.length?agr.map(a=>`due <b>${hm(a.expectedArrival)}</b> (${esc(a.platformName)})`).join(' · '):'not predicted at AGR in the current window (either direction)'}</p>
+ <p>${T}${depName(DP)}: ${agr.length?agr.map(a=>`due <b>${hm(a.expectedArrival)}</b> (${esc(a.platformName)})`).join(' · '):`not predicted at ${DP} in the current window (either direction)`}</p>
  ${duty}<p class="muted">TfL data updated ${upd?hm(upd):'—'}. Information only. Refreshing every 30 s.</p>`;ftTimer=setTimeout(findTrain,30000)}
 $('#ftGo').onclick=findTrain;$('#ftNum').addEventListener('keydown',e=>{if(e.key==='Enter')findTrain()});
 function bindSel(){document.querySelectorAll('#myTrains .pick button').forEach(b=>b.onclick=()=>{trSel=b.dataset.i==='auto'?null:+b.dataset.i;myTrains()})}
@@ -251,7 +257,7 @@ $('#boBtn').onclick=async()=>{const out=$('#boOut'),nowD=NOW(),hm=`${String(nowD
   list.sort((x,y)=>x.d-y.d);st=list[0];dist=Math.round(st.d)}
  catch(e){out.innerHTML=spNote()+`<p class="err">${esc(e.message)}</p><p class="muted">Time filled in (${hm}). Enter the station and train number by hand below.</p>`;spBind();return}
  if(dist>2000){out.innerHTML=spNote()+`<p class="err">You are ${(dist/1000).toFixed(1)} km from the nearest Piccadilly station (${esc(st.name)}). Enter the station and train by hand.</p>`;spBind();return}
- const bookOff=/^Arnos Grove/.test(st.name); // duty book-off place is AGR
+ const bookOff=st.name.startsWith(depName(depOf(r))); // book-off place is the duty's depot
  $('#hStation').value=st.name;$('#hFin').value=bookOff?'Finished on platform':'Book-off travel';
  let h=`<p>Nearest: <b>${esc(st.name)}</b> (${dist} m) · ${bookOff?'at your book-off place':'not your book-off place, so book-off travel'}</p>`;
  try{const arr=await (await fetch(`https://api.tfl.gov.uk/Line/piccadilly/Arrivals/${st.id}`)).json();
@@ -266,7 +272,10 @@ $('#boBtn').onclick=async()=>{const out=$('#boOut'),nowD=NOW(),hm=`${String(nowD
  catch(e){h+='<p class="err">No live TfL data (offline?). Enter the train number by hand.</p>'}
  out.innerHTML=spNote()+h+'<p class="muted">Check the form below, then tap <b>Add to log</b>.</p>';spBind();out.querySelectorAll('.pick button').forEach(b=>b.onclick=()=>{$('#hSame').checked=false;syncSame();$('#hTrain').value=b.dataset.v})};
 if(new URLSearchParams(location.search).has('csv'))$('#csvFallback').hidden=false;
-const SF={sMargin:'margin',sAllow:'allow',sBoAllow:'boAllow'};
+const SF={sMargin:'margin',sAllow:'allow',sBoAllow:'boAllow',sDepot:'myDepot'};
+// book-on allowance default per depot (AGR 17 min; CFS 17 until confirmed). Only fills in when the user hasn't typed their own value
+const ALLOW_DEF={AGR:17,CFS:17};function setDepotAllow(){if(!S.allowTyped)S.allow=ALLOW_DEF[depot()]}
+function syncDepot(){const s=$('#sDepot');if(s)s.value=S.myDepot||'';const n=$('#depNow');if(n)n.textContent=`Using: ${depName()}${S.myDepot?'':' (from your duty book, or Arnos Grove if none)'}`}
 function setView(){for(const[i,k]of Object.entries(SF))$('#'+i).value=S[k];}
 // ---- Your setup (per phone): lie-down and hours log on/off. New phones default to off; phones already holding an hours log or duties default to on. ----
 function setupDefault(){return false}
@@ -275,13 +284,14 @@ const lieOn=()=>false,hoursOn=()=>false,lieMin=()=>lieOn()?(+S.lie||0):0;
 function applySetup(){const hb=document.querySelector('nav button[data-t=hours]');hb.hidden=!hoursOn();if(!hoursOn()&&hb.classList.contains('on'))document.querySelector('nav button[data-t=week]').click();
 }
 function setupCard(){const el=$('#setupW');if(!el)return;if(S.setupDone){el.innerHTML='';return}
- el.innerHTML=`<div class="card setupcard"><b>Welcome to AGR Drivers</b><p>Load the PDFs you've been issued: duty book, notices and running cards.</p><p><button class="b" id="suLoad" type="button">Load PDFs</button> <button class="b s" id="suSave" type="button">Got it</button></p><p class="muted">Press and hold a file, tick the rest, then tap Select (top right). Or pick one zip of all your PDFs.</p><p class="muted">Your files stay on this phone. Load the copies you've been issued.</p></div>`;
+ el.innerHTML=`<div class="card setupcard"><b>Welcome to Piccadilly Drivers</b><p>My depot: <select id="suDepot"><option value="">Work it out from my duty book</option><option value="AGR">Arnos Grove</option><option value="CFS">Cockfosters</option></select></p><p>Load the PDFs you've been issued: duty book, notices and running cards.</p><p><button class="b" id="suLoad" type="button">Load PDFs</button> <button class="b s" id="suSave" type="button">Got it</button></p><p class="muted">Press and hold a file, tick the rest, then tap Select (top right). Or pick one zip of all your PDFs.</p><p class="muted">Your files stay on this phone. Load the copies you've been issued.</p></div>`;
+ const sd=$('#suDepot');sd.value=S.myDepot||'';sd.onchange=()=>{S.myDepot=sd.value;setDepotAllow();LS.set('settings',S);syncDepot()};
  $('#suSave').onclick=()=>{S.setupDone=1;LS.set('settings',S);setupCard()};$('#suLoad').onclick=()=>{const i=$('#fPdf');i.multiple=true;i.value='';i.click()}}
-$('#saveSet').onclick=()=>{for(const[i,k]of Object.entries(SF))S[k]=$('#'+i).value.trim();S.setupDone=1;applySetup();setupCard();LS.set('settings',S);$('#setMsg').textContent='Saved.'};
+$('#saveSet').onclick=()=>{const a0=String(S.allow);for(const[i,k]of Object.entries(SF))S[k]=$('#'+i).value.trim();if(String(S.allow)!==a0)S.allowTyped=1;syncDepot();S.setupDone=1;applySetup();setupCard();LS.set('settings',S);$('#setMsg').textContent='Saved.'};
 function setHash(h){try{history.replaceState(null,'','#'+h)}catch(e){location.hash=h}}
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{if(b.dataset.t!=='card')setHash(b.dataset.t);document.querySelectorAll('nav button,section').forEach(x=>x.classList.remove('on'));b.classList.add('on');$('#'+b.dataset.t).classList.add('on');
  ({card:()=>{const fw=cardFromWeek;$('#cardDay').value=fw||todayISO();cardFromWeek=null;setHash(fw&&fw!==todayISO()?'card/'+fw:'card');cardView()},trains:()=>{trSel=null;myTrains();lineStatus()},hours:()=>{hoursView();if(!$('#hDriven').value)hoursDefaults()},set:setView,week:()=>{weekView();tomorrowCard();lsRender();remindersView()},_w:weekView})[b.dataset.t]()});
-async function reload(){DATA=await loadData();summary();browseFill()}
+async function reload(){DATA=await loadData();summary();browseFill();syncDepot()}
 // ---- What changed after an import: compare parsed results for every entered day from this week on ----
 function daySnap(d){const r=resolve(d);if(!r)return null;const pk=r.card&&r.card.pickups&&r.card.pickups.length?r.card.pickups.map(p=>`${p.train} ${p.time} ${p.at}${p.rev?' (Reverser)':''}`).join(', '):null;
  return{type:r.special?r.type:r.type+(r.cover?' cover':r.spare?' spare':''),on:r.times&&r.times.sign_on||'',off:r.times&&r.times.sign_off||'',onAt:r.onAt||'',pk}}
@@ -421,16 +431,17 @@ function remindersView(){const el=$('#remW');if(!el)return;const t=todayISO(),in
 
 // ---- bracket end wording (no generic 'end of duty') ----
 function getOffTxt(c,html=true){const e=c.end,b=s=>html?`<b>${s}</b>`:s,d=e.rev?'Reverser':(e.dir||''),at=e.at.replace(/ (E|W)$/,'');return`Get off ${esc(e.train)} at ${b(e.t)} ${esc(at)}${d?' '+d:''}${e.last?', relieved':''}`}
-function spareTxt(c,html=true){const at=c.spareAt||'AGR';return c.spareOff?`Spare until ${html?`<b>${c.spareOff}</b>`:c.spareOff} at ${esc(at)}`:'Spare finish not known'}
+function spareTxt(c,html=true){const at=c.spareAt||depot();return c.spareOff?`Spare until ${html?`<b>${c.spareOff}</b>`:c.spareOff} at ${esc(at)}`:'Spare finish not known'}
 const tbCache={};
-async function backTravel(date,c){const code=c.end.code;if(code==='AGR')return null;const man=LS.get('covBack',{})[date];if(man!=null)return{m:man,src:'typed by hand'};
- if(!PLACE_IDS[code])return{err:`Don't know which station "${c.end.at}" is.`};const k=date+code+c.end.t;if(tbCache[k])return tbCache[k];
- try{const u=`https://api.tfl.gov.uk/Journey/JourneyResults/${PLACE_IDS[code]}/to/940GZZLUASG?mode=tube&date=${date.replace(/-/g,'')}&time=${c.end.t.replace(':','')}&timeIs=Departing`;
+async function backTravel(date,c){const code=c.end.code,home=c.spareAt&&DEPOTS[c.spareAt.split(' ')[0]]?c.spareAt.split(' ')[0]:depot();if(code===home)return null;const man=LS.get('covBack',{})[date];if(man!=null)return{m:man,src:'typed by hand'};
+ if(!PLACE_IDS[code])return{err:`Don't know which station "${c.end.at}" is.`};const k=date+code+home+c.end.t;if(tbCache[k])return tbCache[k];
+ try{const u=`https://api.tfl.gov.uk/Journey/JourneyResults/${PLACE_IDS[code]}/to/${DEPOTS[home].id}?mode=tube&date=${date.replace(/-/g,'')}&time=${c.end.t.replace(':','')}&timeIs=Departing`;
   const j=await (await fetch(u)).json();const js=(j.journeys||[]).filter(x=>x.duration>0).sort((x,y)=>new Date(x.startDateTime)-new Date(y.startDateTime));if(!js.length)throw new Error('no journeys returned');
   return tbCache[k]={m:js[0].duration,src:`TfL Journey Planner, train about ${js[0].startDateTime.slice(11,16)}`,arr:js[0].arrivalDateTime.slice(11,16)}}catch(e){return{err:`TfL journey planner failed (${e.message||e}).`}}}
-function backSlot(date,c){return c.end.code==='AGR'?'':`<div class="tback" data-d="${date}">Travel back to Arnos Grove: …</div>`}
+const homeOf=c=>c.spareAt&&DEPOTS[c.spareAt.split(' ')[0]]?c.spareAt.split(' ')[0]:depot();
+function backSlot(date,c){return c.end.code===homeOf(c)?'':`<div class="tback" data-d="${date}">Travel back to ${depName(homeOf(c))}: …</div>`}
 async function fillBack(root){for(const el of (root||document).querySelectorAll('.tback')){const d=el.dataset.d,r=resolve(d);if(!r||!r.covering||r.covering.missing){el.remove();continue}const c=r.covering,t=await backTravel(d,c);if(!t){el.remove();continue}
-  const man=LS.get('covBack',{})[d];el.innerHTML=(t.err?`<span class="err">Travel back to Arnos Grove: ${esc(t.err)} Type the minutes:</span>`:`Travel back to Arnos Grove: <b>${t.m} min</b> (${esc(t.src)})${t.arr?`, there about <b>${t.arr}</b>`:''}.`)+` <span class="muted">By hand: <input class="cbMan" type="number" min="0" style="width:4.5em" value="${man??''}"> min</span>`;
+  const man=LS.get('covBack',{})[d];el.innerHTML=(t.err?`<span class="err">Travel back to ${depName(homeOf(c))}: ${esc(t.err)} Type the minutes:</span>`:`Travel back to ${depName(homeOf(c))}: <b>${t.m} min</b> (${esc(t.src)})${t.arr?`, there about <b>${t.arr}</b>`:''}.`)+` <span class="muted">By hand: <input class="cbMan" type="number" min="0" style="width:4.5em" value="${man??''}"> min</span>`;
   const i=el.querySelector('.cbMan');i.onchange=()=>{const m=LS.get('covBack',{});if(i.value==='')delete m[d];else m[d]=+i.value;LS.set('covBack',m);fillBack(el.parentNode)}}}
 if(new URLSearchParams(location.search).has('debug'))window.__dbg={cardRows,resolveFor};
 

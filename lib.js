@@ -92,10 +92,11 @@ function parseDutyBook(name,pages){const first=pages.slice(0,3).flat().join(' ')
  for(const c of covers){c.days=secDays[c.tablePage]||[];c.dt='Cover duty ('+(c.days.length>1?DN[c.days[0]]+' - '+DN[c.days[c.days.length-1]]:DN[c.days[0]]||'?')+')';delete c.tablePage}
  for(const d of duties){const t=d.lines.join('\n');const om=t.match(/On:\s*(\d\d:\d\d)(?:\s+([A-Z]{2,4}))?/)||[];d.on=om[1]||'';d.onAt=om[2]||'';d.finish=(t.match(/Finish:\s*(\S+)/)||[])[1]||'';
   const fm=t.match(/Finish:\s*\S+ \*/),nt=t.match(/\*:?\s*(This duty may finish[^\n]*)/i);if(fm&&nt)d.note=nt[1];if(/Spare Day on the Rota/i.test(t))d.spare=true;d.pickups=pickups(d.lines);d.meals=meals(d.lines);delete d.lines}
- return{name,timetable:tn?tn[1]:'',from:v?isoFrom(v[1],v[2],v[3]):'',until:v?isoFrom(v[4],v[5],v[6]):'',duties:duties.filter(d=>d.days.length).concat(covers.filter(c=>c.days.length))}}
+ const dep=/cockfosters/i.test(name+' '+first)?'CFS':/arnos grove/i.test(name+' '+first)?'AGR':'';
+ return{name,depot:dep,timetable:tn?tn[1]:'',from:v?isoFrom(v[1],v[2],v[3]):'',until:v?isoFrom(v[4],v[5],v[6]):'',duties:duties.filter(d=>d.days.length).concat(covers.filter(c=>c.days.length))}}
 function looksLikeDutyBook(name,pages){const t=pages.slice(0,3).flat().join(' ');const hdr=pages.flat().some(l=>/^Duty:\s*\d{3} .+ Duty Length:/.test(l));
  return hdr&&(/duty\s*book/i.test(name)||/DUTY BOOK/i.test(t))&&!/P\s*26\s*[-_/ ]?\s*\d{3}/i.test(name)}
-export const PARSER_VERSION=9;
+export const PARSER_VERSION=10;
 // 'To manager's instructions' spare turns: 'TO MANAGER'S INSTRUCTIONS' (P26 compact lines), 'MGR INSTR.', 'Duty Managers Instructions', 'DMI'
 export const TMI=/MANAGER'?S?\s+INSTRUCTIONS|MGR\.?\s*INSTR|DUTY\s+MANAGER'?S?'?\s+INSTR|\bDMI\b/i;
 export async function importPdfs(files,progress){const cards=(await idb.get('kv','cards'))||{},compact=(await idb.get('kv','compact'))||{},notices=(await idb.get('kv','notices'))||{};

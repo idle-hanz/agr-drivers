@@ -1,6 +1,6 @@
 {
- "name": "AGR Drivers",
- "short_name": "AGR Drivers",
+ "name": "Piccadilly Drivers",
+ "short_name": "Piccadilly Drivers",
  "start_url": "/agr-drivers/",
  "scope": "/agr-drivers/",
  "display": "standalone",
