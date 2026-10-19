@@ -40,3 +40,4 @@ table.brk tr.early td{opacity:.3}table.brk tr.tap{cursor:pointer}table.brk tr.ou
 .relief{margin-top:4px;font-size:1.05em}
 .loadpdf{display:block;text-align:center;font-size:1.25em;padding:16px;margin:10px 0;cursor:pointer}.setup{border:1px solid #2a3a66;border-radius:10px;padding:8px;margin:8px 0}.setupcard{border:2px solid #4a7bd0}label.inl{display:block;margin:6px 0}
 .donecat{text-align:center;margin:4px 0 10px}.donecat img{width:240px;max-width:70%;height:auto;border-radius:24px;display:block;margin:0 auto}.donetxt{font-size:20px;font-weight:700;color:#b6f2c0;margin:8px 0 0}
+.vh{position:absolute!important;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0)}

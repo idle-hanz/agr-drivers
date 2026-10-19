@@ -275,8 +275,8 @@ const lieOn=()=>false,hoursOn=()=>false,lieMin=()=>lieOn()?(+S.lie||0):0;
 function applySetup(){const hb=document.querySelector('nav button[data-t=hours]');hb.hidden=!hoursOn();if(!hoursOn()&&hb.classList.contains('on'))document.querySelector('nav button[data-t=week]').click();
 }
 function setupCard(){const el=$('#setupW');if(!el)return;if(S.setupDone){el.innerHTML='';return}
- el.innerHTML=`<div class="card setupcard"><b>Welcome to AGR Drivers</b><p>Load the PDFs you've been issued: duty book, notices and running cards.</p><p><button class="b" id="suLoad" type="button">Load PDFs</button> <button class="b s" id="suSave" type="button">Got it</button></p><p class="muted">Your files stay on this phone. Load the copies you've been issued.</p></div>`;
- $('#suSave').onclick=()=>{S.setupDone=1;LS.set('settings',S);setupCard()};$('#suLoad').onclick=()=>$('#fPdf').click()}
+ el.innerHTML=`<div class="card setupcard"><b>Welcome to AGR Drivers</b><p>Load the PDFs you've been issued: duty book, notices and running cards.</p><p><button class="b" id="suLoad" type="button">Load PDFs</button> <button class="b s" id="suSave" type="button">Got it</button></p><p class="muted">Press and hold a file, tick the rest, then tap Select (top right). Or pick one zip of all your PDFs.</p><p class="muted">Your files stay on this phone. Load the copies you've been issued.</p></div>`;
+ $('#suSave').onclick=()=>{S.setupDone=1;LS.set('settings',S);setupCard()};$('#suLoad').onclick=()=>{const i=$('#fPdf');i.multiple=true;i.value='';i.click()}}
 $('#saveSet').onclick=()=>{for(const[i,k]of Object.entries(SF))S[k]=$('#'+i).value.trim();S.setupDone=1;applySetup();setupCard();LS.set('settings',S);$('#setMsg').textContent='Saved.'};
 function setHash(h){try{history.replaceState(null,'','#'+h)}catch(e){location.hash=h}}
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{if(b.dataset.t!=='card')setHash(b.dataset.t);document.querySelectorAll('nav button,section').forEach(x=>x.classList.remove('on'));b.classList.add('on');$('#'+b.dataset.t).classList.add('on');
@@ -296,7 +296,12 @@ function showChanges(before){const ch=LS.get('changes',{}),list=[];
 async function withDiff(fn){const before=snapAll();await fn();showChanges(before);weekView()}
 function summary(){const n=DATA.notices.length,c=Object.values(DATA.cards).reduce((a,v)=>a+Object.keys(v).length,0);$('#dataSummary').textContent=`On this phone: ${n} notices, ${c} running cards`+((DATA.normal||[]).map(b=>`, normal duty book ${b.timetable} (${b.duties.length} duties)`).join(''))+'.'}
 $('#fCsv').onchange=e=>withDiff(async()=>{let r;try{r=await importCsvs([...e.target.files].filter(f=>!/\.pdf$/i.test(f.name)))}catch(err){$('#impMsg').className='err';$('#impMsg').textContent='CSV import failed: '+(err&&err.message||err);return}$('#impMsg').className='ok';await reload();$('#impMsg').textContent=`Imported ${r.pack} notice list rows and ${r.dut} duties.`;weekView();e.target.value=''});
-async function doPdfs(files,pre=''){const msg=$('#impMsg');msg.className='muted';
+// A .zip of PDFs is unpacked on the phone (vendored fflate, no network); every PDF inside is imported
+async function expandZips(files){const out=[],notes=[];for(const f of files){const isZip=/\.zip$/i.test(f.name)||/zip/.test(f.type||'');if(!isZip){out.push(f);continue}
+  try{const {unzipSync}=await import('./vendor/fflate.mjs');const all=unzipSync(new Uint8Array(await f.arrayBuffer()),{filter:x=>/\.pdf$/i.test(x.name)&&!/(^|\/)(__MACOSX|\.)/.test(x.name)});
+   const names=Object.keys(all);for(const n of names)out.push(new File([all[n]],n.split('/').pop(),{type:'application/pdf'}));notes.push(`${f.name}: ${names.length} PDF${names.length===1?'':'s'} inside`)}
+  catch(e){notes.push(`${f.name}: could not open the zip (${e.message||e})`)}}return{files:out,notes}}
+async function doPdfs(files,pre=''){const msg=$('#impMsg');msg.className='muted';{const z=await expandZips(files);files=z.files;if(z.notes.length)pre+=z.notes.map(esc).join('<br>')+'<br>'}
  try{const r=await importPdfs(files,m=>msg.textContent='Reading '+m);await reload();
   msg.className=r.errors.length?'err':'ok';msg.innerHTML=pre+`<b>${r.pdfs} of ${r.files} PDFs loaded.</b><br>`+[...(r.normal||[]),...(r.notices||[]),...(r.rcs||[])].map(esc).join('<br>')+(r.errors.length?'<br>Problems:<br>'+r.errors.map(esc).join('<br>'):'');return r}
  catch(err){msg.className='err';msg.textContent='Import failed: '+(err&&err.message||err)}weekView()}
@@ -308,7 +313,7 @@ $('#clearData').onclick=async()=>{if(!confirm('Delete all notices, PDFs, duties,
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),4000)}
 reparseIfOld().then(r=>{if(r)toast('Updated card data')}).catch(e=>toast('Card data update failed: '+(e&&e.message||e))).then(reload).then(()=>{const w=new URLSearchParams(location.search).get('week');wkOptions();if(w){const e=sat(w);if(![...$('#wk').options].some(x=>x.value===e))$('#wk').insertAdjacentHTML('afterbegin',`<option value="${e}">w/e Sat ${e}</option>`);$('#wk').value=e}weekView();cardView();
  const hm=(location.hash||'').slice(1).split('/'),tab=hm[0];if(tab&&document.querySelector(`nav button[data-t="${tab}"]:not([hidden])`)&&!(tab==="hours"&&!hoursOn())){if(tab==='card'&&/^\d{4}-\d\d-\d\d$/.test(hm[1]||''))cardFromWeek=hm[1];document.querySelector(`nav button[data-t="${tab}"]`).click()}});
-const APP_VERSION='agrd-v4';{const v=document.getElementById('appVer');if(v){v.textContent='App version '+APP_VERSION;if(window.caches)caches.keys().then(k=>{v.textContent+=' · offline copy '+(k.filter(x=>/^agrd-v/.test(x)).join(', ')||'none yet')})}}
+const APP_VERSION='agrd-v5';{const v=document.getElementById('appVer');if(v){v.textContent='App version '+APP_VERSION;if(window.caches)caches.keys().then(k=>{v.textContent+=' · offline copy '+(k.filter(x=>/^agrd-v/.test(x)).join(', ')||'none yet')})}}
 if('serviceWorker'in navigator){let had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js',{scope:'./',updateViaCache:'none'}).then(r=>{r.update();document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')r.update()})});navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)location.reload();had=true})}
 // ---- Swipe between tabs (follows the top menu order) ----
 (function(){const order=[...document.querySelectorAll('nav button')].map(b=>b.dataset.t);let s=null;
@@ -446,9 +451,9 @@ async function shareInbox(){const q=new URLSearchParams(location.search);if(!q.h
  const items=(await idb.get('kv','shareInbox'))||[];await idb.put('kv','shareInbox',[]);try{history.replaceState(null,'',location.pathname+'#set')}catch(e){}
  document.querySelector('nav button[data-t=set]').click();const msg=$('#impMsg');
  if(!items.length){msg.className='err';msg.textContent='Nothing was received from the share. Try again, or use Load PDFs.';return}
- const files=items.map(x=>new File([x.blob],x.name||'shared.pdf',{type:'application/pdf'}));await withDiff(async()=>{await doPdfs(files,`Shared from another app: ${files.length} file${files.length>1?'s':''}.<br>`)});msg.scrollIntoView({block:'start'})}
+ const files=items.map(x=>new File([x.blob],x.name||'shared.pdf',{type:x.type||'application/pdf'}));await withDiff(async()=>{await doPdfs(files,`Shared from another app: ${files.length} file${files.length>1?'s':''}.<br>`)});msg.scrollIntoView({block:'start'})}
 applySetup();setupCard();shareInbox();
-if('serviceWorker'in navigator&&window.caches)navigator.serviceWorker.ready.then(r=>caches.has('agrd-v4').then(h=>{if(!h&&r.active)r.active.postMessage('recache')})).catch(()=>{});
+if('serviceWorker'in navigator&&window.caches)navigator.serviceWorker.ready.then(r=>caches.has('agrd-v5').then(h=>{if(!h&&r.active)r.active.postMessage('recache')})).catch(()=>{});
 
 $('#delOld').onclick=async()=>{const t=todayISO(),list=await oldFiles(t),m=$('#delMsg'),f=d=>`${d.slice(8)}/${d.slice(5,7)}/${d.slice(2,4)}`;
  if(!list.length){m.textContent='Nothing old to delete. Everything on this phone is current or future.';return}
