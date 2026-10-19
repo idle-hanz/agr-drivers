@@ -5,4 +5,3 @@ Contains **no duty data**. Each driver loads the PDFs they have been issued (dut
 
 pdf.js is vendored under `vendor/` (Apache-2.0, see `vendor/PDFJS-LICENSE`).
 
-Optional: a free TomTom key (developer.tomtom.com) entered in Settings gives traffic-aware drive times. It is stored on the phone only.
