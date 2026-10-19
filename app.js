@@ -275,8 +275,8 @@ const lieOn=()=>false,hoursOn=()=>false,lieMin=()=>lieOn()?(+S.lie||0):0;
 function applySetup(){const hb=document.querySelector('nav button[data-t=hours]');hb.hidden=!hoursOn();if(!hoursOn()&&hb.classList.contains('on'))document.querySelector('nav button[data-t=week]').click();
 }
 function setupCard(){const el=$('#setupW');if(!el)return;if(S.setupDone){el.innerHTML='';return}
- el.innerHTML=`<div class="card setupcard"><b>Welcome to AGR Drivers</b><p>Load the PDFs you've been issued: duty book, notices and running cards.</p><p><label class="b" for="fPdf">Load PDFs</label> <button class="b s" id="suSave">Got it</button></p><p class="muted">Your files stay on this phone. Load the copies you've been issued.</p></div>`;
- $('#suSave').onclick=()=>{S.setupDone=1;LS.set('settings',S);setupCard()}}
+ el.innerHTML=`<div class="card setupcard"><b>Welcome to AGR Drivers</b><p>Load the PDFs you've been issued: duty book, notices and running cards.</p><p><button class="b" id="suLoad" type="button">Load PDFs</button> <button class="b s" id="suSave" type="button">Got it</button></p><p class="muted">Your files stay on this phone. Load the copies you've been issued.</p></div>`;
+ $('#suSave').onclick=()=>{S.setupDone=1;LS.set('settings',S);setupCard()};$('#suLoad').onclick=()=>$('#fPdf').click()}
 $('#saveSet').onclick=()=>{for(const[i,k]of Object.entries(SF))S[k]=$('#'+i).value.trim();S.setupDone=1;applySetup();setupCard();LS.set('settings',S);$('#setMsg').textContent='Saved.'};
 function setHash(h){try{history.replaceState(null,'','#'+h)}catch(e){location.hash=h}}
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{if(b.dataset.t!=='card')setHash(b.dataset.t);document.querySelectorAll('nav button,section').forEach(x=>x.classList.remove('on'));b.classList.add('on');$('#'+b.dataset.t).classList.add('on');
