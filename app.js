@@ -166,10 +166,10 @@ async function myTrains(){clearTimeout(trTimer);const out=$('#myTrains');if(!doc
  const ps=r.card.pickups,on=t2m(r.times&&r.times.sign_on||ps[0].time);
  const at=t=>{const d=new Date(`${date}T${t}:00`);if(t2m(t)<on-60)d.setDate(d.getDate()+1);return d};
  const end=(p,i)=>p.relief?at(p.relief):ps[i+1]?at(ps[i+1].time):new Date(+at(p.time)+4*3600e3);
- if(r.covering&&!r.covering.missing&&now>=+at(r.covering.end.t)){const c=r.covering;out.innerHTML=head+`<p class="big">You're spare until ${c.spareOff||'— (finish not known)'}.</p><p>Driving done at <b>${c.end.t}</b> ${placeTxt(c.end.at,c.end.rev?'Reverser':c.end.dir)}.</p>${backSlot(date,c)}`;fillBack(out);return}
+ if(r.covering&&!r.covering.missing&&now>=+at(r.covering.end.t)){const c=r.covering;out.innerHTML=head+CAT_HTML+`<p class="big">You're spare until ${c.spareOff||'— (finish not known)'}.</p><p>Driving done at <b>${c.end.t}</b> ${placeTxt(c.end.at,c.end.rev?'Reverser':c.end.dir)}.</p>${backSlot(date,c)}`;fillBack(out);return}
  let cur=ps.findIndex((p,i)=>now<end(p,i));const auto=cur;if(trSel!==null&&ps[trSel])cur=trSel;
  const sel=`<div class="pick">${ps.map((p,i)=>`<button data-i="${i}" class="${i===cur?'on':''}">${p.train} · ${p.time}${i===auto?' (now)':''}</button>`).join('')}${trSel!==null?'<button data-i="auto">Follow current</button>':''}</div>`;
- if(cur<0){out.innerHTML=head+'<p class="big">All pick-ups done</p><p class="muted">Last relief has passed.</p>'+sel;bindSel();return}
+ if(cur<0){out.innerHTML=head+CAT_HTML+'<p class="big">All pick-ups done</p><p class="muted">Last relief has passed.</p>'+sel;bindSel();return}
  const p=ps[cur],booked=at(p.time),working=now>=+booked,RL=reliefOf(r,ps,cur),rel='';
  const dirTxt=p.rev?'Reverser':`${p.dir}`;
  let h=head+`<div class="trainhead"><div><div class="muted">Train</div><div class="trainno" id="curTrain">${esc(p.train)}</div></div><div><div>Pick up <b class="big">${p.time}</b></div><div>at <b>${esc(p.at)}</b> · ${dirTxt} · ${p.kind}${rel}</div>${RL?`<div class="relief">${RL.getOff?'Get off':'Relieved'} at <b>${relTxt(RL)}</b></div>`:''}${working?'<div class="tag eng">Working this train now</div>':''}</div></div>`;h=h.replace('<div class="trainhead">',mealBanner(r.card,ps,at,now,cur,working,end,RL)+'<div class="trainhead">');
@@ -358,7 +358,7 @@ $('#clearData').onclick=async()=>{if(!confirm('Delete all notices, PDFs, duties,
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),4000)}
 reparseIfOld().then(r=>{if(r)toast('Updated card data')}).catch(e=>toast('Card data update failed: '+(e&&e.message||e))).then(reload).then(()=>{const w=new URLSearchParams(location.search).get('week');wkOptions();if(w){const e=sat(w);if(![...$('#wk').options].some(x=>x.value===e))$('#wk').insertAdjacentHTML('afterbegin',`<option value="${e}">w/e Sat ${e}</option>`);$('#wk').value=e}weekView();cardView();
  const hm=(location.hash||'').slice(1).split('/'),tab=hm[0];if(tab&&document.querySelector(`nav button[data-t="${tab}"]:not([hidden])`)&&!(tab==="hours"&&!hoursOn())){if(tab==='card'&&/^\d{4}-\d\d-\d\d$/.test(hm[1]||''))cardFromWeek=hm[1];document.querySelector(`nav button[data-t="${tab}"]`).click()}});
-const APP_VERSION='agrd-v1';{const v=document.getElementById('appVer');if(v){v.textContent='App version '+APP_VERSION;if(window.caches)caches.keys().then(k=>{v.textContent+=' · offline copy '+(k.filter(x=>/^agrd-v/.test(x)).join(', ')||'none yet')})}}
+const APP_VERSION='agrd-v2';{const v=document.getElementById('appVer');if(v){v.textContent='App version '+APP_VERSION;if(window.caches)caches.keys().then(k=>{v.textContent+=' · offline copy '+(k.filter(x=>/^agrd-v/.test(x)).join(', ')||'none yet')})}}
 if('serviceWorker'in navigator){let had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js',{scope:'./',updateViaCache:'none'}).then(r=>{r.update();document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')r.update()})});navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)location.reload();had=true})}
 // ---- Swipe between tabs (follows the top menu order) ----
 (function(){const order=[...document.querySelectorAll('nav button')].map(b=>b.dataset.t);let s=null;
@@ -406,13 +406,22 @@ function docket(i){const all=hours(),h=all[i];if(!h)return;let o=$('#dk');if(!o)
  $('#dkClose').onclick=()=>o.classList.remove('on');
  $('#dkCopy').onclick=async()=>{const txt='Overtime docket\n'+[...o.querySelectorAll('input')].map(inp=>`${inp.closest('tr').querySelector('th').textContent}: ${inp.value.trim()}`).join('\n');
   try{await navigator.clipboard.writeText(txt);$('#dkMsg').textContent='Copied.'}catch(e){const t=document.createElement('textarea');t.value=txt;document.body.appendChild(t);t.select();try{document.execCommand('copy');$('#dkMsg').textContent='Copied.'}catch(_){$('#dkMsg').textContent='Copy failed. Long-press to select instead.'}t.remove()}}}
+// ---- Driving done for today (sleeping cat) ----
+const CAT_HTML='<div class="donecat"><img src="sleeping-cat.webp" srcset="sleeping-cat.webp 360w, sleeping-cat@2x.webp 720w" sizes="240px" width="240" height="240" alt="Sleeping cat"><p class="donetxt">Driving done for today</p></div>';
+function drivingDone(nowD=NOW()){const now=+nowD,date=`${nowD.getFullYear()}-${String(nowD.getMonth()+1).padStart(2,'0')}-${String(nowD.getDate()).padStart(2,'0')}`,r=resolve(date);
+ if(!r||r.special)return false;const ps=(r.card&&r.card.pickups)||[],on=t2m(r.times&&r.times.sign_on||(ps[0]&&ps[0].time)||'00:00');
+ const at=t=>{const d=new Date(`${date}T${t}:00`);if(t2m(t)<on-60)d.setDate(d.getDate()+1);return d};
+ if(r.covering&&!r.covering.missing)return now>=+at(r.covering.end.t);
+ if(r.cover||r.spare)return false;
+ if(ps.length){const i=ps.length-1,p=ps[i];return now>=+(p.relief?at(p.relief):new Date(+at(p.time)+4*3600e3))}
+ const off=r.times&&r.times.sign_off;return !!(off&&/^\d\d:\d\d/.test(off)&&now>=+at(off.slice(0,5)))}
 // ---- Tomorrow at a glance ----
 async function planDay(date){const r=resolve(date);if(!r)return{r};if(r.special)return{r};const cov=r.covering&&!r.covering.missing?r.covering:null;
  const on=r.times&&r.times.sign_on;if(!on||!/^\d\d:\d\d/.test(on))return{r,noOn:true};const son=t2m(on),arrive=cov?son:son-lieMin();
  const pk=(r.card&&r.card.pickups)||[],first=pk[0];const wake=first&&!r.cover&&!r.spare?t2m(first.time)-10:son-10;const j=await driveTime(date,arrive);return{r,cov,son,leave:j.leave,drive:j,wake,first}}
 function todayDone(){const n=NOW();if(n.getHours()>=15)return true;const r=resolve(todayISO());if(!r||r.special)return true;const off=r.times&&r.times.sign_off;if(!off||!/^\d\d:\d\d/.test(off))return false;
  const son=r.times.sign_on&&/^\d\d:\d\d/.test(r.times.sign_on)?t2m(r.times.sign_on):0,nowM=n.getHours()*60+n.getMinutes();return((nowM-son+1440)%1440)>((t2m(off.slice(0,5))-son+1440)%1440)}
-async function tomorrowCard(){const els=['#tmrW','#tmrP'].map(s=>$(s)).filter(Boolean);if(!todayDone()){els.forEach(e=>e.innerHTML='');return}
+async function tomorrowCard(){const els=['#tmrW','#tmrP'].map(s=>$(s)).filter(Boolean);if(!todayDone()){const cat=drivingDone();els.forEach(e=>e.innerHTML=cat&&e.id==='tmrW'?CAT_HTML:'');return}
  const d=addD(todayISO(),1),dd=new Date(d+'T12:00:00'),lbl=`${DAYS[dd.getDay()]} ${d.slice(8)}/${d.slice(5,7)}`,ch=(LS.get('changes',{})[d]||{}).seen===false?' <span class="tag chgb">Changed</span>':'';
  const p=await planDay(d),r=p.r;let h=`<div class="tmr"><p class="muted">Tomorrow · ${lbl}${ch}</p>`;
  if(!r)h+='<p class="big">No duty entered for tomorrow</p>';
@@ -424,7 +433,7 @@ async function tomorrowCard(){const els=['#tmrW','#tmrP'].map(s=>$(s)).filter(Bo
    const f=p.cov?p.cov.start:p.first;if(f)h+=`<tr><td>${p.cov?'Take over':'First pick-up'}</td><td><b>${esc(f.train)}</b> ${f.time} ${esc(f.at)} · ${f.rev?'Reverser':esc(f.dir&&f.dir!=='see card'?f.dir:'')}</td></tr>`;
    if(p.cov)h+=`<tr><td>Get off</td><td>${getOffTxt(p.cov).replace(/^Get off /,'')}</td></tr><tr><td>Spare</td><td>${spareTxt(p.cov).replace(/^Spare /,'')}</td></tr>`;
    h+=`</table>${p.cov?backSlot(d,p.cov):''}<p><button class="b s tmrWake">Set wake alarm (${m2t(p.wake)})</button></p>`}}
- h+='</div>';els.forEach(e=>{e.innerHTML=h;fillBack(e);const b=e.querySelector('.tmrWake');if(b)b.onclick=()=>{alarmDay=d;alarm(p.wake,'Wake up - sign on soon');setTimeout(()=>alarmDay=null,3000)}})}
+ h+='</div>';const cat=drivingDone();els.forEach(e=>{e.innerHTML=(cat&&e.id==='tmrW'?CAT_HTML:'')+h;fillBack(e);const b=e.querySelector('.tmrWake');if(b)b.onclick=()=>{alarmDay=d;alarm(p.wake,'Wake up - sign on soon');setTimeout(()=>alarmDay=null,3000)}})}
 // ---- Line status alert (checks only while the app is open or just reopened) ----
 let LSTAT=null,lsTimer=null;
 async function lsCheck(){try{const j=await (await fetch('https://api.tfl.gov.uk/Line/piccadilly/Status',{cache:'no-store'})).json();const s=(j[0]&&j[0].lineStatuses)||[];if(!s.length)throw new Error('no status');
@@ -490,4 +499,4 @@ async function shareInbox(){const q=new URLSearchParams(location.search);if(!q.h
  if(!items.length){msg.className='err';msg.textContent='Nothing was received from the share. Try again, or use Load PDFs.';return}
  const files=items.map(x=>new File([x.blob],x.name||'shared.pdf',{type:'application/pdf'}));await withDiff(async()=>{await doPdfs(files,`Shared from another app: ${files.length} file${files.length>1?'s':''}.<br>`)});msg.scrollIntoView({block:'start'})}
 applySetup();setupCard();shareInbox();
-if('serviceWorker'in navigator&&window.caches)navigator.serviceWorker.ready.then(r=>caches.has('agrd-v1').then(h=>{if(!h&&r.active)r.active.postMessage('recache')})).catch(()=>{});
+if('serviceWorker'in navigator&&window.caches)navigator.serviceWorker.ready.then(r=>caches.has('agrd-v2').then(h=>{if(!h&&r.active)r.active.postMessage('recache')})).catch(()=>{});
