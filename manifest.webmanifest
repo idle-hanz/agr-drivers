@@ -40,6 +40,10 @@
       "application/pdf",
       ".pdf",
       "application/zip",
+      "application/x-zip-compressed",
+      "application/x-zip",
+      "multipart/x-zip",
+      "application/octet-stream",
       ".zip"
      ]
     }

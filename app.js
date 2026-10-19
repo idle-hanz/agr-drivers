@@ -307,9 +307,12 @@ async function withDiff(fn){const before=snapAll();await fn();showChanges(before
 function summary(){const n=DATA.notices.length,c=Object.values(DATA.cards).reduce((a,v)=>a+Object.keys(v).length,0);$('#dataSummary').textContent=`On this phone: ${n} notices, ${c} running cards`+((DATA.normal||[]).map(b=>`, normal duty book ${b.timetable} (${b.duties.length} duties)`).join(''))+'.'}
 $('#fCsv').onchange=e=>withDiff(async()=>{let r;try{r=await importCsvs([...e.target.files].filter(f=>!/\.pdf$/i.test(f.name)))}catch(err){$('#impMsg').className='err';$('#impMsg').textContent='CSV import failed: '+(err&&err.message||err);return}$('#impMsg').className='ok';await reload();$('#impMsg').textContent=`Imported ${r.pack} notice list rows and ${r.dut} duties.`;weekView();e.target.value=''});
 // A .zip of PDFs is unpacked on the phone (vendored fflate, no network); every PDF inside is imported
-async function expandZips(files){const out=[],notes=[];for(const f of files){const isZip=/\.zip$/i.test(f.name)||/zip/.test(f.type||'');if(!isZip){out.push(f);continue}
-  try{const {unzipSync}=await import('./vendor/fflate.mjs');const all=unzipSync(new Uint8Array(await f.arrayBuffer()),{filter:x=>/\.pdf$/i.test(x.name)&&!/(^|\/)(__MACOSX|\.)/.test(x.name)});
-   const names=Object.keys(all);for(const n of names)out.push(new File([all[n]],n.split('/').pop(),{type:'application/pdf'}));notes.push(`${f.name}: ${names.length} PDF${names.length===1?'':'s'} inside`)}
+// What a file really is, from its first bytes (MIME types from WhatsApp/Android are unreliable): PK\x03\x04 = zip, %PDF = PDF
+async function sniff(f){const b=new Uint8Array(await f.slice(0,1024).arrayBuffer());if(b[0]===0x50&&b[1]===0x4b&&b[2]===3&&b[3]===4)return'zip';for(let i=0;i<b.length-3;i++)if(b[i]===0x25&&b[i+1]===0x50&&b[i+2]===0x44&&b[i+3]===0x46)return'pdf';return /\.zip$/i.test(f.name)?'zip':/\.pdf$/i.test(f.name)?'pdf':''}
+async function expandZips(files){const out=[],notes=[];for(const f of files){const k=await sniff(f);if(k==='pdf'){out.push(f.type==='application/pdf'?f:new File([f],/\.pdf$/i.test(f.name)?f.name:f.name+'.pdf',{type:'application/pdf'}));continue}
+  if(k!=='zip'){notes.push(`${f.name}: not a PDF or zip, skipped`);continue}
+  try{const {unzipSync}=await import('./vendor/fflate.mjs');const base=n=>n.split(/[\\/]/).pop();const all=unzipSync(new Uint8Array(await f.arrayBuffer()),{filter:x=>/\.pdf$/i.test(x.name)&&!/(^|[\\/])(__MACOSX|\.)/.test(x.name)});
+   const names=Object.keys(all);for(const n of names)out.push(new File([all[n]],base(n),{type:'application/pdf'}));notes.push(`${f.name}: ${names.length} PDF${names.length===1?'':'s'} inside`)}
   catch(e){notes.push(`${f.name}: could not open the zip (${e.message||e})`)}}return{files:out,notes}}
 async function doPdfs(files,pre=''){const msg=$('#impMsg');msg.className='muted';{const z=await expandZips(files);files=z.files;if(z.notes.length)pre+=z.notes.map(esc).join('<br>')+'<br>'}
  try{const r=await importPdfs(files,m=>msg.textContent='Reading '+m);await reload();
@@ -323,7 +326,7 @@ $('#clearData').onclick=async()=>{if(!confirm('Delete all notices, PDFs, duties,
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),4000)}
 reparseIfOld().then(r=>{if(r)toast('Updated card data')}).catch(e=>toast('Card data update failed: '+(e&&e.message||e))).then(reload).then(()=>{const w=new URLSearchParams(location.search).get('week');wkOptions();if(w){const e=sat(w);if(![...$('#wk').options].some(x=>x.value===e))$('#wk').insertAdjacentHTML('afterbegin',`<option value="${e}">w/e Sat ${e}</option>`);$('#wk').value=e}weekView();cardView();
  const hm=(location.hash||'').slice(1).split('/'),tab=hm[0];if(tab&&document.querySelector(`nav button[data-t="${tab}"]:not([hidden])`)&&!(tab==="hours"&&!hoursOn())){if(tab==='card'&&/^\d{4}-\d\d-\d\d$/.test(hm[1]||''))cardFromWeek=hm[1];document.querySelector(`nav button[data-t="${tab}"]`).click()}});
-const APP_VERSION='agrd-v5';{const v=document.getElementById('appVer');if(v){v.textContent='App version '+APP_VERSION;if(window.caches)caches.keys().then(k=>{v.textContent+=' · offline copy '+(k.filter(x=>/^agrd-v/.test(x)).join(', ')||'none yet')})}}
+const APP_VERSION='agrd-v7';{const v=document.getElementById('appVer');if(v){v.textContent='App version '+APP_VERSION;if(window.caches)caches.keys().then(k=>{v.textContent+=' · offline copy '+(k.filter(x=>/^agrd-v/.test(x)).join(', ')||'none yet')})}}
 if('serviceWorker'in navigator){let had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js',{scope:'./',updateViaCache:'none'}).then(r=>{r.update();document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')r.update()})});navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)location.reload();had=true})}
 // ---- Swipe between tabs (follows the top menu order) ----
 (function(){const order=[...document.querySelectorAll('nav button')].map(b=>b.dataset.t);let s=null;
@@ -461,8 +464,8 @@ const relTxt=x=>x?`${x.t} ${x.at?placeTxt(x.at,x.dir):'(place not on card)'}`:''
 async function shareInbox(){const q=new URLSearchParams(location.search);if(!q.has('share'))return;
  const items=(await idb.get('kv','shareInbox'))||[];await idb.put('kv','shareInbox',[]);try{history.replaceState(null,'',location.pathname+'#set')}catch(e){}
  document.querySelector('nav button[data-t=set]').click();const msg=$('#impMsg');
- if(!items.length){msg.className='err';msg.textContent='Nothing was received from the share. Try again, or use Load PDFs.';return}
- const files=items.map(x=>new File([x.blob],x.name||'shared.pdf',{type:x.type||'application/pdf'}));await withDiff(async()=>{await doPdfs(files,`Shared from another app: ${files.length} file${files.length>1?'s':''}.<br>`)});msg.scrollIntoView({block:'start'})}
+ if(!items.length){msg.className='err';msg.textContent='Nothing was received from the share'+(q.get('err')?` (${q.get('err')})`:'')+'. Try again, or use Load PDFs. If Piccadilly Drivers is missing from the Share list, or shares never arrive, remove the app from your home screen and add it again from Chrome.';return}
+ const files=items.map(x=>new File([x.blob],x.name||'shared.pdf',{type:x.type||''}));await withDiff(async()=>{await doPdfs(files,`Shared from another app: ${files.length} file${files.length>1?'s':''}.<br>`)});msg.scrollIntoView({block:'start'})}
 applySetup();setupCard();shareInbox();
 if('serviceWorker'in navigator&&window.caches)navigator.serviceWorker.ready.then(r=>caches.has('agrd-v5').then(h=>{if(!h&&r.active)r.active.postMessage('recache')})).catch(()=>{});
 
