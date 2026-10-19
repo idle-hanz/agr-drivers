@@ -1,4 +1,4 @@
-import {idb,wipe,importCsvs,importPdfs,loadData,renderPages,reparseIfOld} from './lib.js';
+import {oldFiles,deleteOld,idb,wipe,importCsvs,importPdfs,loadData,renderPages,reparseIfOld} from './lib.js';
 const $=s=>document.querySelector(s),DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 // AGR Drivers shares the idle-hanz.github.io origin with another app: every localStorage key is prefixed so neither app can see or clear the other's data
 const LSP='agrd:',LS={get:(k,d)=>{try{return JSON.parse(localStorage.getItem(LSP+k))??d}catch{return d}},set:(k,v)=>localStorage.setItem(LSP+k,JSON.stringify(v))};
@@ -500,3 +500,11 @@ async function shareInbox(){const q=new URLSearchParams(location.search);if(!q.h
  const files=items.map(x=>new File([x.blob],x.name||'shared.pdf',{type:'application/pdf'}));await withDiff(async()=>{await doPdfs(files,`Shared from another app: ${files.length} file${files.length>1?'s':''}.<br>`)});msg.scrollIntoView({block:'start'})}
 applySetup();setupCard();shareInbox();
 if('serviceWorker'in navigator&&window.caches)navigator.serviceWorker.ready.then(r=>caches.has('agrd-v2').then(h=>{if(!h&&r.active)r.active.postMessage('recache')})).catch(()=>{});
+
+$('#delOld').onclick=async()=>{const t=todayISO(),list=await oldFiles(t),m=$('#delMsg'),f=d=>`${d.slice(8)}/${d.slice(5,7)}/${d.slice(2,4)}`;
+ if(!list.length){m.textContent='Nothing old to delete. Everything on this phone is current or future.';return}
+ const lines=list.map(it=>it.type==='notice'?`• Notice ${it.key} (${it.dates.map(f).join(', ')}): ${it.files.map(x=>x.kind==='csv'?'notice data':/^RC-/.test(x.id)?'running cards PDF':'notice PDF').join(', ')}`:`• Duty book ${it.timetable} (${f(it.from)} to ${f(it.until)}), ${it.why}`);
+ const n=list.reduce((a,it)=>a+it.files.length,0);
+ m.innerHTML=`<b>Will delete ${n} file${n>1?'s':''}:</b><br>${lines.map(esc).join('<br>')}`;await new Promise(r=>setTimeout(r,50));
+ if(!confirm(`Delete ${n} old file${n>1?'s':''}?\n\n${lines.join('\n')}\n\nKept: everything current or future, your week, hours log and settings.`)){m.innerHTML+='<br><b>Nothing deleted.</b>';return}
+ const done=await deleteOld(list);await reload();summary();m.textContent=`Deleted ${done} file${done>1?'s':''}.`;weekView()};
