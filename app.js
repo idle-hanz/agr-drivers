@@ -1,4 +1,4 @@
-import {oldFiles,deleteOld,idb,wipe,importCsvs,importPdfs,loadData,renderPages,reparseIfOld} from './lib.js';
+import {oldFiles,deleteOld,idb,wipe,importCsvs,importPdfs,loadData,renderPages,reparseIfOld,readPdfPages,findWdsRow,looksLikeWds,pdfjs} from './lib.js';
 const $=s=>document.querySelector(s),DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 // AGR Drivers shares the idle-hanz.github.io origin with another app: every localStorage key is prefixed so neither app can see or clear the other's data
 const LSP='agrd:',LS={get:(k,d)=>{try{return JSON.parse(localStorage.getItem(LSP+k))??d}catch{return d}},set:(k,v)=>localStorage.setItem(LSP+k,JSON.stringify(v))};
@@ -113,6 +113,8 @@ $('#wkNow').onclick=()=>{$('#wk').value=sat(today());weekView()};
 function fillDays(){const s=addD($('#wk').value,-6),o=[...Array(7)].map((_,i)=>{const d=addD(s,i);const v=duties()[d];return`<option value="${d}">${d===today()?'▶ ':''}${DAYS[i]} ${d} — ${esc(SPECIAL[v]||v||'no duty')}</option>`}).join('');
 }
 $('#saveWeek').onclick=()=>{const du=duties();document.querySelectorAll('#days input').forEach(i=>{const v=normCode(i.value);if(v)du[i.dataset.d]=v;else delete du[i.dataset.d]});LS.set('duties',du);weekView();$('#wkMsg').textContent='Saved.'};
+$('#rosterBtn')&&($('#rosterBtn').onclick=()=>{const i=$('#fRoster');if(!i)return;i.value='';i.click()});
+$('#fRoster')&&($('#fRoster').onchange=async e=>{const f=e.target.files&&e.target.files[0];e.target.value='';if(f)await fillFromRosterFile(f)});
 $('#wk').onchange=weekView;
 let cardFromWeek=null;
 function todayISO(){const d=NOW();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
@@ -272,7 +274,7 @@ $('#boBtn').onclick=async()=>{const out=$('#boOut'),nowD=NOW(),hm=`${String(nowD
  catch(e){h+='<p class="err">No live TfL data (offline?). Enter the train number by hand.</p>'}
  out.innerHTML=spNote()+h+'<p class="muted">Check the form below, then tap <b>Add to log</b>.</p>';spBind();out.querySelectorAll('.pick button').forEach(b=>b.onclick=()=>{$('#hSame').checked=false;syncSame();$('#hTrain').value=b.dataset.v})};
 if(new URLSearchParams(location.search).has('csv'))$('#csvFallback').hidden=false;
-const SF={sMargin:'margin',sAllow:'allow',sBoAllow:'boAllow',sDepot:'myDepot'};
+const SF={sMargin:'margin',sAllow:'allow',sBoAllow:'boAllow',sDepot:'myDepot',sStaff:'staffNo'};
 // book-on allowance default per depot (AGR 17 min; CFS 17 until confirmed). Only fills in when the user hasn't typed their own value
 const ALLOW_DEF={AGR:17,CFS:17};function setDepotAllow(){if(!S.allowTyped)S.allow=ALLOW_DEF[depot()]}
 function syncDepot(){const s=$('#sDepot');if(s)s.value=S.myDepot||'';const n=$('#depNow');if(n)n.textContent=`Using: ${depName()}${S.myDepot?'':' (from your duty book, or Arnos Grove if none)'}`}
@@ -315,18 +317,56 @@ async function expandZips(files){const out=[],notes=[];for(const f of files){con
    const names=Object.keys(all);for(const n of names)out.push(new File([all[n]],base(n),{type:'application/pdf'}));notes.push(`${f.name}: ${names.length} PDF${names.length===1?'':'s'} inside`)}
   catch(e){notes.push(`${f.name}: could not open the zip (${e.message||e})`)}}return{files:out,notes}}
 async function doPdfs(files,pre=''){const msg=$('#impMsg');msg.className='muted';{const z=await expandZips(files);files=z.files;if(z.notes.length)pre+=z.notes.map(esc).join('<br>')+'<br>'}
- try{const r=await importPdfs(files,m=>msg.textContent='Reading '+m);await reload();
+ // Weekly Display Sheets fill the week — never stored with other PDFs
+ {const keep=[],wds=[];for(const f of files){try{const pages=await readPdfPages(f);if(looksLikeWds(pages))wds.push(f);else keep.push(f)}catch(e){keep.push(f)}}
+  for(const f of wds)await fillFromRosterFile(f);files=keep;if(wds.length&&!files.length){msg.className='ok';msg.textContent=(pre||'')+'Roster read for your week (PDF not kept).';return}}
+ try{if(!files.length){msg.textContent=(pre||'')+'Nothing left to import.';return}const r=await importPdfs(files,m=>msg.textContent='Reading '+m);await reload();
   msg.className=r.errors.length?'err':'ok';msg.innerHTML=pre+`<b>${r.pdfs} of ${r.files} PDFs loaded.</b><br>`+[...(r.normal||[]),...(r.notices||[]),...(r.rcs||[])].map(esc).join('<br>')+(r.errors.length?'<br>Problems:<br>'+r.errors.map(esc).join('<br>'):'');return r}
  catch(err){msg.className='err';msg.textContent='Import failed: '+(err&&err.message||err)}weekView()}
 $('#fPdf').onchange=e=>withDiff(async()=>{await doPdfs([...e.target.files]);e.target.value=''});
 $('#fDir').onchange=e=>withDiff(async()=>{const all=[...e.target.files],csv=all.filter(f=>/\.csv$/i.test(f.name)),pdf=all.filter(f=>/\.pdf$/i.test(f.name));
  let c={pack:0,dut:0};try{c=await importCsvs(csv);await reload()}catch(err){}
  await doPdfs(pdf,`${csv.length} CSVs read (${c.dut} duties). `);e.target.value=''});
-$('#clearData').onclick=async()=>{if(!confirm('Delete all notices, PDFs, duties, hours and settings from this phone?'))return;await wipe();Object.keys(localStorage).filter(k=>k.startsWith(LSP)).forEach(k=>localStorage.removeItem(k));location.reload()};
+$('#clearData').onclick=async()=>{if(!confirm('Delete all notices, PDFs, duties, hours and settings from this phone?\n\nKept: your staff number.'))return;const keepSn=(LS.get('settings',{})||{}).staffNo;await wipe();Object.keys(localStorage).filter(k=>k.startsWith(LSP)).forEach(k=>localStorage.removeItem(k));if(keepSn)LS.set('settings',{staffNo:keepSn});location.reload()};
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),4000)}
 reparseIfOld().then(r=>{if(r)toast('Updated card data')}).catch(e=>toast('Card data update failed: '+(e&&e.message||e))).then(reload).then(()=>{const w=new URLSearchParams(location.search).get('week');wkOptions();if(w){const e=sat(w);if(![...$('#wk').options].some(x=>x.value===e))$('#wk').insertAdjacentHTML('afterbegin',`<option value="${e}">w/e Sat ${e}</option>`);$('#wk').value=e}weekView();cardView();
  const hm=(location.hash||'').slice(1).split('/'),tab=hm[0];if(tab&&document.querySelector(`nav button[data-t="${tab}"]:not([hidden])`)&&!(tab==="hours"&&!hoursOn())){if(tab==='card'&&/^\d{4}-\d\d-\d\d$/.test(hm[1]||''))cardFromWeek=hm[1];document.querySelector(`nav button[data-t="${tab}"]`).click()}});
-const APP_VERSION='agrd-v10';{const v=document.getElementById('appVer');if(v){v.textContent='App version '+APP_VERSION;if(window.caches)caches.keys().then(k=>{v.textContent+=' · offline copy '+(k.filter(x=>/^agrd-v/.test(x)).join(', ')||'none yet')})}}
+// ---- Fill week from roster (Weekly Display Sheet). Staff number from Settings; names never kept. ----
+let rosterPending=null;
+function staffNo(){return String(S.staffNo||'').replace(/\D/g,'')}
+function maskStaff(n){n=String(n||'').replace(/\D/g,'');return n?'(saved on this phone)':'(not set)'}
+function showRosterConfirm(row,srcLabel){const box=$('#rosterBox');if(!box)return;rosterPending=row;
+ const DAYS_S=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+ let flags=0;const grid=row.days.map((d,i)=>{const lab=SPECIAL[d.code]||d.code||'—';if(d.flag)flags++;
+  return`<span>${DAYS_S[i]} ${d.date.slice(8)}/${d.date.slice(5,7)}</span><b>${esc(lab)}</b><span class="flag">${d.flag?esc(d.flag):''}</span>`}).join('');
+ box.hidden=false;box.innerHTML=`<b>Confirm your week</b>
+<p class="muted">From ${esc(srcLabel||'roster')} · week ending Sat ${esc(row.weekEnding.slice(8))}/${esc(row.weekEnding.slice(5,7))}/${esc(row.weekEnding.slice(2,4))} · rota ${esc(row.rota)} (changes each week). Your staff number ${esc(maskStaff(staffNo()))} matched.</p>
+<div class="rostergrid">${grid}</div>
+${flags?`<p class="err">${flags} day(s) need a check (leave / unknown code). Those days won't be filled until you type them.</p>`:''}
+<p><button class="b" id="rosterApply" type="button">Use these duties</button> <button class="b s" id="rosterCancel" type="button">Cancel</button></p>`;
+ $('#rosterApply').onclick=()=>{const du=duties();let n=0,skipped=0;for(const d of rosterPending.days){if(d.code){du[d.date]=d.code;n++}else if(d.flag)skipped++}
+  LS.set('duties',du);rosterPending=null;box.hidden=true;box.innerHTML='';
+  const we=row.weekEnding;if($('#wk')&&![...$('#wk').options].some(o=>o.value===we)){$('#wk').insertAdjacentHTML('afterbegin',`<option value="${we}">w/e Sat ${we.slice(8)}/${we.slice(5,7)}/${we.slice(2,4)}</option>`)}
+  if($('#wk'))$('#wk').value=we;weekView();toast(`Filled ${n} day${n===1?'':'s'} from roster`+(skipped?` · ${skipped} left blank`:''));
+  if($('#wkMsg'))$('#wkMsg').textContent=`Filled ${n} day${n===1?'':'s'} from roster.`};
+ $('#rosterCancel').onclick=()=>{rosterPending=null;box.hidden=true;box.innerHTML=''}}
+async function fillFromRosterFile(file){const box=$('#rosterBox');
+ if(!file)return;
+ if(/\.(png|jpe?g|webp|gif|heic)$/i.test(file.name)||(/^image\//.test(file.type)&&!/pdf/i.test(file.type))){
+  if(box){box.hidden=false;box.innerHTML=`<b>Photos not supported yet</b><p class="muted">Use the Weekly Display Sheet PDF for now. On-device photo reading is on the to-do list.</p><button class="b s" type="button" id="rosterCancel">OK</button>`;$('#rosterCancel').onclick=()=>{box.hidden=true;box.innerHTML=''}}
+  else toast('Photos not supported yet — use the PDF');return}
+ const sn=staffNo();if(!/^\d{8}$/.test(sn)){toast('Save your 8-digit staff number in Settings first');document.querySelector('nav button[data-t=set]')?.click();return}
+ if(box){box.hidden=false;box.innerHTML=`<p class="muted">Reading roster…</p>`}
+ try{const pages=await readPdfPages(file,m=>{if(box)box.innerHTML=`<p class="muted">Reading roster (${esc(m)})…</p>`});
+  if(!looksLikeWds(pages)){if(box){box.hidden=false;box.innerHTML=`<p class="err">That file doesn't look like a Weekly Display Sheet.</p><button class="b s" id="rosterCancel">OK</button>`;$('#rosterCancel').onclick=()=>{box.hidden=true;box.innerHTML=''}}return}
+  const row=findWdsRow(pages,sn);
+  if(row.err==='staff'){toast('Save your 8-digit staff number in Settings first');return}
+  if(row.err==='missing'){if(box){box.hidden=false;box.innerHTML=`<p class="err">No row matched your staff number on this roster.</p><p class="muted">Check the number in Settings. The roster PDF is not kept on this phone.</p><button class="b s" id="rosterCancel">OK</button>`;$('#rosterCancel').onclick=()=>{box.hidden=true;box.innerHTML=''}}return}
+  if(!row.ok){if(box){box.hidden=false;box.innerHTML=`<p class="err">Could not read your row (${esc(row.err)}).</p><button class="b s" id="rosterCancel">OK</button>`;$('#rosterCancel').onclick=()=>{box.hidden=true;box.innerHTML=''}}return}
+  showRosterConfirm(row,file.name||'roster PDF')}
+ catch(e){if(box){box.hidden=false;box.innerHTML=`<p class="err">Could not read that file: ${esc(e&&e.message||e)}</p><button class="b s" id="rosterCancel">OK</button>`;$('#rosterCancel').onclick=()=>{box.hidden=true;box.innerHTML=''}}}}
+
+const APP_VERSION='agrd-v11';{const v=document.getElementById('appVer');if(v){v.textContent='App version '+APP_VERSION;if(window.caches)caches.keys().then(k=>{v.textContent+=' · offline copy '+(k.filter(x=>/^agrd-v/.test(x)).join(', ')||'none yet')})}}
 if('serviceWorker'in navigator){let had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js',{scope:'./',updateViaCache:'none'}).then(r=>{r.update();document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')r.update()})});navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)location.reload();had=true})}
 // ---- Swipe between tabs (follows the top menu order) ----
 (function(){const order=[...document.querySelectorAll('nav button')].map(b=>b.dataset.t);let s=null;
