@@ -366,7 +366,7 @@ async function fillFromRosterFile(file){const box=$('#rosterBox');
   showRosterConfirm(row,file.name||'roster PDF')}
  catch(e){if(box){box.hidden=false;box.innerHTML=`<p class="err">Could not read that file: ${esc(e&&e.message||e)}</p><button class="b s" id="rosterCancel">OK</button>`;$('#rosterCancel').onclick=()=>{box.hidden=true;box.innerHTML=''}}}}
 
-const APP_VERSION='agrd-v12';{const v=document.getElementById('appVer');if(v){v.textContent='App version '+APP_VERSION;if(window.caches)caches.keys().then(k=>{v.textContent+=' · offline copy '+(k.filter(x=>/^agrd-v/.test(x)).join(', ')||'none yet')})}}
+const APP_VERSION='agrd-v13';{const v=document.getElementById('appVer');if(v){v.textContent='App version '+APP_VERSION;if(window.caches)caches.keys().then(k=>{v.textContent+=' · offline copy '+(k.filter(x=>/^agrd-v/.test(x)).join(', ')||'none yet')})}}
 if('serviceWorker'in navigator){let had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js',{scope:'./',updateViaCache:'none'}).then(r=>{r.update();document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')r.update()})});navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)location.reload();had=true})}
 // ---- Swipe between tabs (follows the top menu order) ----
 (function(){const order=[...document.querySelectorAll('nav button')].map(b=>b.dataset.t);let s=null;
@@ -501,9 +501,13 @@ const relTxt=x=>x?`${x.t} ${x.at?placeTxt(x.at,x.dir):'(place not on card)'}`:''
 
 // ---- Android share target: the service worker stores shared PDFs in this phone's database, then opens ?share=1 ----
 async function shareInbox(){const q=new URLSearchParams(location.search);if(!q.has('share'))return;
- const items=(await idb.get('kv','shareInbox'))||[];await idb.put('kv','shareInbox',[]);try{history.replaceState(null,'',location.pathname+'#set')}catch(e){}
- document.querySelector('nav button[data-t=set]').click();const msg=$('#impMsg');
- if(!items.length){msg.className='err';msg.textContent='Nothing was received from the share'+(q.get('err')?` (${q.get('err')})`:'')+'. Try again, or use Load PDFs. If Kitty Cat is missing from the Share list, or shares never arrive, remove the app from your home screen and add it again from Chrome.';return}
+ document.querySelector('nav button[data-t=set]').click();const msg=$('#impMsg');msg.className='muted';msg.textContent='Receiving shared file…';
+ // Cold-start race: the SW redirects after writing IndexedDB, but the page can load before that write is visible. Poll briefly; only clear once we have files.
+ let items=[];const err=q.get('err')||'',deadline=Date.now()+3000;
+ while(Date.now()<deadline){items=(await idb.get('kv','shareInbox'))||[];if(items.length)break;await new Promise(r=>setTimeout(r,100))}
+ try{history.replaceState(null,'',location.pathname+'#set')}catch(e){}
+ if(!items.length){msg.className='err';msg.textContent='Nothing was received from the share'+(err?` (${err})`:'')+'. Try again, or use Load PDFs. If Kitty Cat is missing from the Share list, or shares never arrive, remove the app from your home screen and add it again from Chrome.';return}
+ await idb.put('kv','shareInbox',[]);
  const files=items.map(x=>new File([x.blob],x.name||'shared.pdf',{type:x.type||''}));await withDiff(async()=>{await doPdfs(files,`Shared from another app: ${files.length} file${files.length>1?'s':''}.<br>`)});msg.scrollIntoView({block:'start'})}
 applySetup();setupCard();shareInbox();
 if('serviceWorker'in navigator&&window.caches)navigator.serviceWorker.ready.then(r=>caches.has('agrd-v5').then(h=>{if(!h&&r.active)r.active.postMessage('recache')})).catch(()=>{});
